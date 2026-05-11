@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="40"
+    android:viewportHeight="40">
+    <!-- Rider motorcycle icon -->
+    <path
+        android:fillColor="#1A73E8"
+        android:pathData="M20,2C11.16,2 4,9.16 4,18c0,8.84 7.16,16 16,16s16,-7.16 16,-16C36,9.16 28.84,2 20,2z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,6l-4,8h3v10h2V14h3z" />
+    <!-- Direction arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,8l-3,6h2v8h2v-8h2z" />
+</vector>

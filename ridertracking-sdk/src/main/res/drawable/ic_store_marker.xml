@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <!-- Store building icon -->
+    <path
+        android:fillColor="#FF6D00"
+        android:pathData="M16,2L4,8v2h24V8L16,2z" />
+    <path
+        android:fillColor="#FF6D00"
+        android:pathData="M6,12v16h20V12H6zM14,24h-4v-4h4V24zM22,24h-4v-4h4V24zM14,18h-4v-4h4V18zM22,18h-4v-4h4V18z" />
+</vector>
