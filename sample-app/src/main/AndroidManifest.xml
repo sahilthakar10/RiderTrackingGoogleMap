@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:name=".SampleApp"
+        android:allowBackup="true"
+        android:label="RiderTracking Sample"
+        android:theme="@style/Theme.RiderTrackingSample">
+
+        <!-- Your Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDRbiA6ireJSkoZrKJ145TunRmu256tHFc" />
+
+        <activity
+            android:name=".SampleActivity"
+            android:exported="true"
+            android:theme="@style/Theme.RiderTrackingSample">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

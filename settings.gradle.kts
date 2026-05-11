@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "RiderTrackingGoogleMap"
 include(":app")
 include(":ridertracking-sdk")
+include(":sample-app")
