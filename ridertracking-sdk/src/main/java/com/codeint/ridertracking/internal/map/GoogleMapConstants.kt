@@ -20,7 +20,7 @@ object GoogleMapConstants {
     const val SUPER_TIGHT_FOCUS_MARGIN = 0.0005
 
     // Location Update and Validation Constants
-    const val MIN_LOCATION_UPDATE_INTERVAL_MS = 1000L
+    const val MIN_LOCATION_UPDATE_INTERVAL_MS = 500L
     const val MAX_DEVIATION_DISTANCE_METERS = 100.0
     const val MAX_DEVIATION_THRESHOLD_MULTIPLIER = 1.5
     const val MAX_DISTANCE_FROM_ROUTE_METERS = 10000.0

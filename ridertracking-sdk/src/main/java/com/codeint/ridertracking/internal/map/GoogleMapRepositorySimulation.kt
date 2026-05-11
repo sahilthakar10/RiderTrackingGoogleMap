@@ -224,7 +224,7 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
 
             emit(mockLocation)
             previousPoint = mockLocation
-            delay(3.seconds)
+            delay(1500) // 1.5s for smooth animation updates
         }
     }.flowOn(Dispatchers.IO)
 

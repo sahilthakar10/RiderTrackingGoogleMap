@@ -23,32 +23,22 @@ class RiderAnimationControllerTest {
         controller = RiderAnimationController(testScope)
     }
 
-    // ================================
-    // Speed management
-    // ================================
-
     @Test
     fun `setRiderSpeed - clamps to range`() {
-        controller.setRiderSpeed(1f) // below min (5)
+        controller.setRiderSpeed(1f)
         assertEquals(5f, controller.getRiderSpeed(), 0.01f)
 
-        controller.setRiderSpeed(100f) // above max (60)
-        assertEquals(60f, controller.getRiderSpeed(), 0.01f)
+        controller.setRiderSpeed(500f)
+        assertEquals(300f, controller.getRiderSpeed(), 0.01f)
 
-        controller.setRiderSpeed(30f) // in range
+        controller.setRiderSpeed(30f)
         assertEquals(30f, controller.getRiderSpeed(), 0.01f)
     }
 
     @Test
     fun `getRiderSpeed - returns current speed`() {
-        // Default is 240 (unclamped internal value)
-        val speed = controller.getRiderSpeed()
-        assertTrue(speed > 0)
+        assertTrue(controller.getRiderSpeed() > 0)
     }
-
-    // ================================
-    // initializeRiderPosition
-    // ================================
 
     @Test
     fun `initializeRiderPosition - with remaining points - sets animated location`() {
@@ -61,30 +51,17 @@ class RiderAnimationControllerTest {
     @Test
     fun `initializeRiderPosition - empty points - no op`() {
         controller.initializeRiderPosition(emptyList())
-        val state = controller.riderState.value
-        assertNull(state.animatedLocation)
+        assertNull(controller.riderState.value.animatedLocation)
     }
 
     @Test
-    fun `initializeRiderPosition - with visited points - uses last visited`() {
-        // First set some visited points via processRiderLocation
-        controller.processRiderLocation(
-            riderLocation = sampleRoute[5],
-            isOutForDelivery = true,
-            visitedRoutePoints = sampleRoute.take(6),
-            remainingRoutePoints = sampleRoute.drop(5)
-        )
-        // Wait for throttle to expire
-        Thread.sleep(GoogleMapConstants.MIN_LOCATION_UPDATE_INTERVAL_MS + 100)
-
-        controller.initializeRiderPosition(sampleRoute.drop(5))
-        val state = controller.riderState.value
-        assertNotNull(state.animatedLocation)
+    fun `initializeRiderPosition - sets heading towards next point`() {
+        controller.initializeRiderPosition(sampleRoute)
+        // Route goes due north (increasing latitude, same longitude)
+        // Bearing should be approximately 0 degrees (north)
+        val heading = controller.riderState.value.heading
+        assertTrue("Heading should be near 0 (north), was $heading", heading < 10.0 || heading > 350.0)
     }
-
-    // ================================
-    // Trail management
-    // ================================
 
     @Test
     fun `updateRiderTrail - adds location`() {
@@ -100,10 +77,6 @@ class RiderAnimationControllerTest {
         assertEquals(GoogleMapConstants.RIDER_TRAIL_MAX_SIZE, controller.riderState.value.riderTrail.size)
     }
 
-    // ================================
-    // clearAnimation
-    // ================================
-
     @Test
     fun `clearAnimation - resets all state`() {
         controller.initializeRiderPosition(sampleRoute)
@@ -117,10 +90,6 @@ class RiderAnimationControllerTest {
         assertTrue(state.riderTrail.isEmpty())
     }
 
-    // ================================
-    // positionAtDestination
-    // ================================
-
     @Test
     fun `positionAtDestination - sets location immediately`() {
         val dest = LatLng(12.9, 77.6)
@@ -132,22 +101,12 @@ class RiderAnimationControllerTest {
         assertFalse(state.isAnimating)
     }
 
-    // ================================
-    // animateDirectToDestination
-    // ================================
-
     @Test
     fun `animateDirectToDestination - null current position - positions immediately`() {
         val dest = LatLng(12.9, 77.6)
         controller.animateDirectToDestination(dest)
-        // Should fall through to positionAtDestination since no current position
-        val state = controller.riderState.value
-        assertEquals(dest, state.animatedLocation)
+        assertEquals(dest, controller.riderState.value.animatedLocation)
     }
-
-    // ================================
-    // processRiderLocation throttling
-    // ================================
 
     @Test
     fun `processRiderLocation - throttled by interval - ignores rapid updates`() {
@@ -169,7 +128,15 @@ class RiderAnimationControllerTest {
             visitedRoutePoints = emptyList(),
             remainingRoutePoints = sampleRoute
         )
+        assertEquals(sampleRoute.first(), controller.riderState.value.animatedLocation)
+    }
+
+    @Test
+    fun `processRiderLocation - sets raw location and active`() {
+        val location = LatLng(12.0, 77.0)
+        controller.processRiderLocation(location, true, emptyList(), sampleRoute)
         val state = controller.riderState.value
-        assertEquals(sampleRoute.first(), state.animatedLocation)
+        assertEquals(location, state.rawLocation)
+        assertTrue(state.isActive)
     }
 }

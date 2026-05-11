@@ -7,6 +7,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlin.math.abs
 
+/**
+ * Smooth rider animation using continuous time-based interpolation.
+ * Targets 60 FPS for fluid movement like Uber/Swiggy.
+ */
 class RiderAnimationController(
     private val scope: CoroutineScope
 ) {
@@ -14,22 +18,35 @@ class RiderAnimationController(
     private val _riderState = MutableStateFlow(RiderAnimationState())
     val riderState: StateFlow<RiderAnimationState> = _riderState.asStateFlow()
 
-    private var routeAnimationJob: Job? = null
-    private var isAnimatingRoute = false
-    private var lastAnimatedVisitedPointsCount = 0
+    private var animationJob: Job? = null
 
+    // Target position the rider is smoothly moving towards
+    private var targetLocation: LatLng? = null
+    private var animationStartLocation: LatLng? = null
+    private var animationStartTime: Long = 0L
+    private var animationDurationMs: Long = 0L
+
+    // Speed in km/h - controls how fast the rider icon moves
     private var riderSpeedKmh: Float = 240f
-    private val completionAnimationSpeedKmh: Float = 100f
-
-    fun setRiderSpeed(speedKmh: Float) {
-        riderSpeedKmh = speedKmh.coerceIn(5f, 60f)
-    }
-
-    fun getRiderSpeed(): Float = riderSpeedKmh
 
     private var lastLocationUpdateTime = 0L
     private val minLocationUpdateInterval = GoogleMapConstants.MIN_LOCATION_UPDATE_INTERVAL_MS
 
+    companion object {
+        private const val FRAME_DELAY_MS = 16L // 60 FPS
+        private const val MIN_ANIMATION_DURATION_MS = 200L
+        private const val MAX_ANIMATION_DURATION_MS = 5000L
+    }
+
+    fun setRiderSpeed(speedKmh: Float) {
+        riderSpeedKmh = speedKmh.coerceIn(5f, 300f)
+    }
+
+    fun getRiderSpeed(): Float = riderSpeedKmh
+
+    /**
+     * Process a new rider location. Starts smooth animation from current position to new target.
+     */
     fun processRiderLocation(
         riderLocation: LatLng,
         isOutForDelivery: Boolean,
@@ -39,20 +56,139 @@ class RiderAnimationController(
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastLocationUpdateTime < minLocationUpdateInterval) return
 
+        _riderState.value = _riderState.value.copy(
+            rawLocation = riderLocation,
+            isActive = true,
+            visitedRoutePoints = visitedRoutePoints,
+            remainingRoutePoints = remainingRoutePoints
+        )
+
         if (isOutForDelivery) {
-            updateRiderState { state ->
-                state.copy(
-                    rawLocation = riderLocation,
-                    isActive = true,
-                    visitedRoutePoints = visitedRoutePoints,
-                    remainingRoutePoints = remainingRoutePoints
-                )
-            }
-            checkAndStartRouteAnimation()
+            smoothAnimateToLocation(riderLocation)
+            updateHeadingSmooth(riderLocation)
         } else {
             initializeRiderPosition(remainingRoutePoints)
         }
+
         lastLocationUpdateTime = currentTime
+    }
+
+    /**
+     * Core smooth animation - interpolates from current position to target over calculated duration.
+     * Uses time-based interpolation at 60 FPS for fluid movement.
+     */
+    private fun smoothAnimateToLocation(target: LatLng) {
+        val currentPos = _riderState.value.animatedLocation ?: target
+
+        val distance = RouteUtils.calculateDistance(
+            currentPos.latitude, currentPos.longitude,
+            target.latitude, target.longitude
+        )
+
+        // Skip if barely moved
+        if (distance < 0.5) return
+
+        // Calculate animation duration based on distance and speed
+        val speedMs = riderSpeedKmh * 1000.0 / 3600.0
+        val travelDuration = ((distance / speedMs) * 1000).toLong()
+            .coerceIn(MIN_ANIMATION_DURATION_MS, MAX_ANIMATION_DURATION_MS)
+
+        animationStartLocation = currentPos
+        targetLocation = target
+        animationStartTime = System.currentTimeMillis()
+        animationDurationMs = travelDuration
+
+        // Start continuous animation if not already running
+        if (animationJob?.isActive != true) {
+            startContinuousAnimation()
+        }
+    }
+
+    /**
+     * Continuous 60 FPS animation loop.
+     * Smoothly interpolates between start and target positions based on elapsed time.
+     */
+    private fun startContinuousAnimation() {
+        animationJob?.cancel()
+        animationJob = scope.launch {
+            try {
+                _riderState.value = _riderState.value.copy(isAnimating = true)
+
+                while (isActive) {
+                    val start = animationStartLocation ?: break
+                    val target = targetLocation ?: break
+                    val elapsed = System.currentTimeMillis() - animationStartTime
+                    val rawProgress = if (animationDurationMs > 0) {
+                        (elapsed.toFloat() / animationDurationMs).coerceIn(0f, 1f)
+                    } else {
+                        1f
+                    }
+
+                    // Smooth easing for natural movement
+                    val easedProgress = easeInOutQuad(rawProgress)
+
+                    val interpolated = LatLng(
+                        latitude = start.latitude + (target.latitude - start.latitude) * easedProgress,
+                        longitude = start.longitude + (target.longitude - start.longitude) * easedProgress
+                    )
+
+                    _riderState.value = _riderState.value.copy(animatedLocation = interpolated)
+
+                    if (rawProgress >= 1f) {
+                        // Arrived at target - snap to exact position and wait for next update
+                        _riderState.value = _riderState.value.copy(animatedLocation = target)
+                        break
+                    }
+
+                    delay(FRAME_DELAY_MS)
+                }
+            } catch (_: CancellationException) {
+                // Normal cancellation
+            } finally {
+                _riderState.value = _riderState.value.copy(isAnimating = false)
+            }
+        }
+    }
+
+    /**
+     * Quadratic ease-in-out for smooth acceleration and deceleration.
+     */
+    private fun easeInOutQuad(t: Float): Float =
+        if (t < 0.5f) 2f * t * t else 1f - (-2f * t + 2f).let { it * it } / 2f
+
+    /**
+     * Cubic ease-in-out for completion animation.
+     */
+    private fun easeInOutCubic(progress: Float): Float = if (progress < 0.5f) {
+        4f * progress * progress * progress
+    } else {
+        val p = progress - 1f
+        1f + 4f * p * p * p
+    }
+
+    /**
+     * Smoothly rotate heading towards the movement direction.
+     */
+    private fun updateHeadingSmooth(target: LatLng) {
+        val current = _riderState.value.animatedLocation ?: return
+        val distance = RouteUtils.calculateDistance(
+            current.latitude, current.longitude, target.latitude, target.longitude
+        )
+        if (distance < 2.0) return // Don't update heading for tiny movements
+
+        val newBearing = RouteUtils.calculateBearing(current, target).toDouble()
+        val currentHeading = _riderState.value.heading
+
+        var diff = newBearing - currentHeading
+        if (diff > 180) diff -= 360
+        if (diff < -180) diff += 360
+
+        if (abs(diff) > 5.0) {
+            // Smooth rotation - blend towards target heading
+            val smoothed = currentHeading + diff * 0.4
+            val normalized = ((smoothed % 360) + 360) % 360
+            _riderState.value = _riderState.value.copy(heading = normalized)
+        }
     }
 
     fun initializeRiderPosition(remainingRoutePoints: List<LatLng>) {
@@ -65,253 +201,107 @@ class RiderAnimationController(
             return
         }
 
-        updateRiderState { state ->
-            state.copy(animatedLocation = initialPosition, rawLocation = initialPosition)
+        _riderState.value = _riderState.value.copy(
+            animatedLocation = initialPosition,
+            rawLocation = initialPosition
+        )
+
+        // Set initial heading
+        if (remainingRoutePoints.size > 1) {
+            val bearing = RouteUtils.calculateBearing(initialPosition, remainingRoutePoints[1])
+            _riderState.value = _riderState.value.copy(heading = bearing.toDouble())
         }
-        setPredictiveHeading(remainingRoutePoints)
     }
 
     fun updateRiderTrail(location: LatLng) {
-        updateRiderState { state ->
-            val currentTrail = state.riderTrail.toMutableList()
-            currentTrail.add(location)
-            if (currentTrail.size > GoogleMapConstants.RIDER_TRAIL_MAX_SIZE) {
-                currentTrail.removeAt(0)
-            }
-            state.copy(riderTrail = currentTrail)
+        val currentTrail = _riderState.value.riderTrail.toMutableList()
+        currentTrail.add(location)
+        if (currentTrail.size > GoogleMapConstants.RIDER_TRAIL_MAX_SIZE) {
+            currentTrail.removeAt(0)
         }
+        _riderState.value = _riderState.value.copy(riderTrail = currentTrail)
     }
 
     fun clearAnimation() {
-        routeAnimationJob?.cancel()
-        isAnimatingRoute = false
-        lastAnimatedVisitedPointsCount = 0
-        updateRiderState { state ->
-            state.copy(
-                animatedLocation = null, rawLocation = null, heading = 0.0,
-                isActive = false, visitedRoutePoints = emptyList(),
-                remainingRoutePoints = emptyList(), riderTrail = emptyList()
-            )
-        }
+        animationJob?.cancel()
+        targetLocation = null
+        animationStartLocation = null
+        _riderState.value = RiderAnimationState()
     }
 
     fun stopAnimation() {
-        routeAnimationJob?.cancel()
-        isAnimatingRoute = false
+        animationJob?.cancel()
     }
 
+    /**
+     * Animate rider to destination for order completion - smooth 60 FPS with cubic easing.
+     */
     fun animateDirectToDestination(destination: LatLng) {
-        val currentState = _riderState.value
-        val currentPosition = currentState.animatedLocation ?: currentState.rawLocation
+        val currentPosition = _riderState.value.animatedLocation
+            ?: _riderState.value.rawLocation
 
         if (currentPosition == null) {
             positionAtDestination(destination)
             return
         }
 
-        routeAnimationJob?.cancel()
-
-        routeAnimationJob = scope.launch {
+        animationJob?.cancel()
+        animationJob = scope.launch {
             try {
-                isAnimatingRoute = true
-                updateRiderState { state -> state.copy(isAnimating = true) }
+                _riderState.value = _riderState.value.copy(isAnimating = true)
+
+                val bearing = RouteUtils.calculateBearing(currentPosition, destination)
+                _riderState.value = _riderState.value.copy(heading = bearing.toDouble())
 
                 val distance = RouteUtils.calculateDistance(
                     currentPosition.latitude, currentPosition.longitude,
                     destination.latitude, destination.longitude
                 )
 
-                val timing = calculateCompletionAnimationTiming(distance)
-                val bearing = RouteUtils.calculateBearing(currentPosition, destination)
-                updateRiderState { state -> state.copy(heading = bearing.toDouble()) }
+                val speedMs = 100.0 * 1000.0 / 3600.0 // 100 km/h completion speed
+                val duration = ((distance / speedMs) * 1000).toLong()
+                    .coerceIn(500L, 8000L)
 
                 val startTime = System.currentTimeMillis()
-                val totalDuration = timing.totalDurationMs
-                var lastUpdateTime = startTime
 
-                while (true) {
-                    val currentTime = System.currentTimeMillis()
-                    val elapsedTime = currentTime - startTime
-                    val rawProgress = (elapsedTime.toFloat() / totalDuration.toFloat()).coerceIn(0f, 1f)
-                    val easedProgress = applyEaseInOutCubic(rawProgress)
-                    val interpolatedPosition = interpolateLocation(currentPosition, destination, easedProgress)
+                while (isActive) {
+                    val elapsed = System.currentTimeMillis() - startTime
+                    val progress = (elapsed.toFloat() / duration).coerceIn(0f, 1f)
+                    val eased = easeInOutCubic(progress)
 
-                    updateRiderState { state ->
-                        state.copy(animatedLocation = interpolatedPosition, rawLocation = interpolatedPosition)
-                    }
+                    val pos = LatLng(
+                        currentPosition.latitude + (destination.latitude - currentPosition.latitude) * eased,
+                        currentPosition.longitude + (destination.longitude - currentPosition.longitude) * eased
+                    )
 
-                    if (rawProgress >= 1.0f) break
+                    _riderState.value = _riderState.value.copy(
+                        animatedLocation = pos,
+                        rawLocation = pos
+                    )
 
-                    val targetFrameTime = 16L
-                    val actualFrameTime = currentTime - lastUpdateTime
-                    val nextDelay = (targetFrameTime - actualFrameTime).coerceAtLeast(8L)
-                    lastUpdateTime = currentTime
-                    delay(nextDelay)
+                    if (progress >= 1f) break
+                    delay(FRAME_DELAY_MS)
                 }
 
-                updateRiderState { state ->
-                    state.copy(animatedLocation = destination, rawLocation = destination, isAnimating = false)
-                }
-            } catch (_: Exception) {
+                _riderState.value = _riderState.value.copy(
+                    animatedLocation = destination,
+                    rawLocation = destination,
+                    isAnimating = false
+                )
+            } catch (_: CancellationException) {
             } finally {
-                isAnimatingRoute = false
-                updateRiderState { state -> state.copy(isAnimating = false) }
+                _riderState.value = _riderState.value.copy(isAnimating = false)
             }
         }
-    }
-
-    private fun applyEaseInOutCubic(progress: Float): Float = if (progress < 0.5f) {
-        4f * progress * progress * progress
-    } else {
-        val adjustedProgress = progress - 1f
-        1f + 4f * adjustedProgress * adjustedProgress * adjustedProgress
     }
 
     fun positionAtDestination(destination: LatLng) {
-        routeAnimationJob?.cancel()
-        isAnimatingRoute = false
-        updateRiderState { state ->
-            state.copy(
-                animatedLocation = destination, rawLocation = destination,
-                isActive = true, isAnimating = false,
-                visitedRoutePoints = emptyList(), remainingRoutePoints = emptyList()
-            )
-        }
-    }
-
-    private fun checkAndStartRouteAnimation() {
-        val currentState = _riderState.value
-        if (currentState.visitedRoutePoints.isNotEmpty()) {
-            startSpeedControlledRouteAnimation()
-        }
-    }
-
-    private fun startSpeedControlledRouteAnimation() {
-        routeAnimationJob?.cancel()
-
-        val currentState = _riderState.value
-        val visitedPoints = currentState.visitedRoutePoints
-        val remainingPoints = currentState.remainingRoutePoints
-
-        if (visitedPoints.isEmpty()) {
-            if (remainingPoints.isNotEmpty()) {
-                updateRiderState { state -> state.copy(animatedLocation = remainingPoints.first()) }
-                setPredictiveHeading(remainingPoints)
-            }
-            return
-        }
-
-        routeAnimationJob = scope.launch {
-            isAnimatingRoute = true
-            animateAlongVisitedRouteWithSpeed(visitedPoints, 0)
-
-            if (remainingPoints.isNotEmpty()) {
-                animateToPositionWithSpeed(remainingPoints.first())
-                setPredictiveHeading(remainingPoints)
-            }
-            lastAnimatedVisitedPointsCount = visitedPoints.size
-        }
-    }
-
-    private suspend fun animateAlongVisitedRouteWithSpeed(visitedPoints: List<LatLng>, startIndex: Int) {
-        for (i in startIndex until visitedPoints.size) {
-            val targetPoint = visitedPoints[i]
-            animateToPositionWithSpeed(targetPoint)
-            if (i < visitedPoints.size - 1) {
-                updateRiderHeading(targetPoint, visitedPoints[i + 1])
-            }
-            delay(calculateInterPointDelay())
-        }
-    }
-
-    private suspend fun animateToPositionWithSpeed(targetPosition: LatLng) {
-        val currentPosition = _riderState.value.animatedLocation ?: targetPosition
-        val distance = RouteUtils.calculateDistance(
-            currentPosition.latitude, currentPosition.longitude,
-            targetPosition.latitude, targetPosition.longitude
+        animationJob?.cancel()
+        _riderState.value = _riderState.value.copy(
+            animatedLocation = destination, rawLocation = destination,
+            isActive = true, isAnimating = false,
+            visitedRoutePoints = emptyList(), remainingRoutePoints = emptyList()
         )
-
-        if (distance < 1.0) {
-            updateRiderState { state -> state.copy(animatedLocation = targetPosition) }
-            return
-        }
-
-        val timing = calculateAnimationTiming(distance)
-        for (step in 1..timing.steps) {
-            val progress = step.toFloat() / timing.steps.toFloat()
-            val interpolatedPosition = interpolateLocation(currentPosition, targetPosition, progress)
-            updateRiderState { state -> state.copy(animatedLocation = interpolatedPosition) }
-            if (step < timing.steps) delay(timing.stepDelayMs)
-        }
-        updateRiderState { state -> state.copy(animatedLocation = targetPosition) }
-    }
-
-    private fun calculateAnimationTiming(distanceMeters: Double): AnimationTiming {
-        if (distanceMeters <= 0) return AnimationTiming(steps = 1, stepDelayMs = 50, totalDurationMs = 50)
-        val speedMeterPerSecond = riderSpeedKmh * 1000 / 3600
-        val travelTimeMs = ((distanceMeters / speedMeterPerSecond) * 1000).toLong()
-        val targetFrameDelayMs = 50L
-        val calculatedFrames = (travelTimeMs / targetFrameDelayMs).coerceIn(2, 60)
-        val actualStepDelay = travelTimeMs / calculatedFrames
-        return AnimationTiming(steps = calculatedFrames.toInt(), stepDelayMs = actualStepDelay, totalDurationMs = travelTimeMs)
-    }
-
-    private fun calculateInterPointDelay(): Long {
-        val baseDelayMs = 100L
-        val speedFactor = 25f / riderSpeedKmh
-        return (baseDelayMs * speedFactor).toLong().coerceIn(20L, 300L)
-    }
-
-    private fun calculateCompletionAnimationTiming(distanceMeters: Double): AnimationTiming {
-        if (distanceMeters <= 0) return AnimationTiming(steps = 1, stepDelayMs = 50, totalDurationMs = 50)
-        val speedMeterPerSecond = completionAnimationSpeedKmh * 1000 / 3600
-        val travelTimeMs = ((distanceMeters / speedMeterPerSecond) * 1000).toLong()
-        val targetFrameDelayMs = 50L
-        val calculatedFrames = (travelTimeMs / targetFrameDelayMs).coerceIn(2, 80)
-        val actualStepDelay = travelTimeMs / calculatedFrames
-        return AnimationTiming(steps = calculatedFrames.toInt(), stepDelayMs = actualStepDelay, totalDurationMs = travelTimeMs)
-    }
-
-    private fun updateRiderHeading(fromLocation: LatLng, toLocation: LatLng) {
-        val newBearing = RouteUtils.calculateBearing(fromLocation, toLocation)
-        val currentHeading = _riderState.value.heading
-        val headingDifference = newBearing - currentHeading
-        val normalizedDifference = when {
-            headingDifference > GoogleMapConstants.BEARING_WRAPAROUND_THRESHOLD -> headingDifference - GoogleMapConstants.FULL_CIRCLE_DEGREES
-            headingDifference < -GoogleMapConstants.BEARING_WRAPAROUND_THRESHOLD -> headingDifference + GoogleMapConstants.FULL_CIRCLE_DEGREES
-            else -> headingDifference
-        }
-
-        if (abs(normalizedDifference) > GoogleMapConstants.MIN_HEADING_CHANGE_DEGREES) {
-            val smoothingFactor = 0.7
-            val smoothedHeading = currentHeading + (normalizedDifference * smoothingFactor)
-            val normalizedHeading = when {
-                smoothedHeading >= 360.0 -> smoothedHeading - 360.0
-                smoothedHeading < 0.0 -> smoothedHeading + 360.0
-                else -> smoothedHeading
-            }
-            updateRiderState { state -> state.copy(heading = normalizedHeading) }
-        }
-    }
-
-    private fun setPredictiveHeading(remainingRoutePoints: List<LatLng>) {
-        val currentState = _riderState.value
-        val currentPosition = currentState.animatedLocation ?: return
-        if (remainingRoutePoints.size <= 1) return
-        val predictiveBearing = RouteUtils.calculateBearing(currentPosition, remainingRoutePoints[1])
-        updateRiderState { state -> state.copy(heading = predictiveBearing.toDouble()) }
-    }
-
-    private fun interpolateLocation(from: LatLng, to: LatLng, progress: Float): LatLng {
-        val clampedProgress = progress.coerceIn(0f, 1f)
-        return LatLng(
-            latitude = from.latitude + (to.latitude - from.latitude) * clampedProgress,
-            longitude = from.longitude + (to.longitude - from.longitude) * clampedProgress
-        )
-    }
-
-    private fun updateRiderState(update: (RiderAnimationState) -> RiderAnimationState) {
-        _riderState.value = update(_riderState.value)
     }
 }
 
