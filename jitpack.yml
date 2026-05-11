@@ -1,6 +1,4 @@
 jdk:
-  - openjdk17
-before_install:
-  - sdk-manager --install "build-tools;36.0.0"
+  - openjdk21
 install:
   - ./gradlew :ridertracking-sdk:publishToMavenLocal
