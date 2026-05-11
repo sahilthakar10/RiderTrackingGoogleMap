@@ -58,11 +58,17 @@ class RiderManager(
             remainingRoutePoints = remainingRoutePoints
         )
 
+        // Use pruning result if available, otherwise use current tracking state
+        val trackingState = trackingManager.trackingState.value
+        val visitedPoints = pruningResult?.visitedPoints ?: trackingState.visitedRoutePoints
+        val remainingPoints = pruningResult?.remainingPoints
+            ?: trackingState.remainingRoutePoints.ifEmpty { remainingRoutePoints }
+
         animationController.processRiderLocation(
             riderLocation = riderLocation,
             isOutForDelivery = true,
-            visitedRoutePoints = pruningResult?.visitedPoints ?: listOf(),
-            remainingRoutePoints = pruningResult?.remainingPoints ?: listOf()
+            visitedRoutePoints = visitedPoints,
+            remainingRoutePoints = remainingPoints
         )
 
         animationController.updateRiderTrail(riderLocation)
