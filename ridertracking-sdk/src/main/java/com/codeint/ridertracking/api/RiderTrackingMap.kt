@@ -68,6 +68,7 @@ fun RiderTrackingMap(
     val dependencies = remember(order.orderId, internalLocationFlow) {
         SdkDependencies.create(
             config = RiderTrackingSDK.config,
+            order = order,
             riderLocationFlow = internalLocationFlow
         )
     }

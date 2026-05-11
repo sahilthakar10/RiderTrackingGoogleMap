@@ -15,40 +15,23 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
 
+/**
+ * Simulation repository that accepts stores and destination dynamically
+ * from whatever the consumer passes in TrackingOrder.
+ */
 class GoogleMapRepositorySimulation : GoogleMapRepository {
+
     private var previousPoint: SimpleLocation = SimpleLocation(null, null)
     private var trackingId: String? = null
 
-    // STORE CONFIGURATION
-    private val storeConfigurations = listOf(
-        StoreConfig(
-            id = "store1",
-            name = "Pizza Palace",
-            latitude = 12.9170491,
-            longitude = 77.6729254
-        )
-    )
+    // These get populated from init() call
+    private var storeConfigs: List<StoreConfig> = emptyList()
+    private var finalDestination: LatLng = LatLng(0.0, 0.0)
+    private var numberOfStores: Int = 0
 
-    private val numberOfStores = 1
-    private val finalDestinationLocation = SimpleLocation(
-        latitude = 12.925499916077,
-        longitude = 77.66960144043
-    )
+    private var storeList: MutableList<StoreLocation> = mutableListOf()
+    private var activeStoreLocations: List<SimpleLocation> = emptyList()
 
-    private val activeStores: List<StoreConfig> = storeConfigurations.take(numberOfStores)
-    private val activeStoreLocations: List<SimpleLocation> = activeStores.map {
-        SimpleLocation(latitude = it.latitude, longitude = it.longitude)
-    }
-
-    private var storeList = activeStores.map { store ->
-        StoreLocation(
-            storeName = store.name,
-            location = LatLng(store.latitude, store.longitude),
-            isOrderPickedUp = false
-        )
-    }.toMutableList()
-
-    // Route and state variables
     private var completeRoutePoints: List<LatLng> = emptyList()
     private var currentRouteIndex = 0
     private var isOrderPickedUp = false
@@ -57,7 +40,6 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
 
     private val _pickupStatusFlow = MutableSharedFlow<List<StoreLocation>>(replay = 1)
 
-    // Pickup state tracking
     private var currentPickupStoreIndex: Int? = null
     private var pickupStartTime: Long? = null
     private var pickupInProgress = false
@@ -69,63 +51,114 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
     private var storeRouteIndices: MutableList<Int> = mutableListOf()
     private var destinationRouteIndex = 0
 
-    private val sourceLocation = activeStoreLocations.first()
+    override fun init(globalOrderId: String, batchOrderId: String): Flow<OrderResponseData?> = flow {
+        // Wait for stores to be configured (set via setOrderData before loadRoute)
+        if (storeList.isEmpty()) {
+            emit(null)
+            return@flow
+        }
 
-    init {
+        val orderData = OrderResponseData(
+            batchOrderId = batchOrderId,
+            isOrderArrived = false,
+            stores = storeList.toList(),
+            multiStopDestination = finalDestination
+        )
+        emit(orderData)
+
+        delay(5.seconds)
+
+        // Mark first store as picked up
+        if (storeList.isNotEmpty()) {
+            storeList[0] = storeList[0].copy(isOrderPickedUp = true)
+            isOrderPickedUp = true
+            trackingId = "OrderTracking_$batchOrderId"
+            _pickupStatusFlow.emit(storeList.toList())
+        }
+    }
+
+    /**
+     * Configure the simulation with order data from the consumer.
+     * Called by SdkDependencies before the ViewModel starts.
+     */
+    fun configure(stores: List<StoreConfig>, destination: LatLng) {
+        this.storeConfigs = stores
+        this.finalDestination = destination
+        this.numberOfStores = stores.size
+
+        this.activeStoreLocations = stores.map {
+            SimpleLocation(latitude = it.latitude, longitude = it.longitude)
+        }
+
+        this.storeList = stores.map { store ->
+            StoreLocation(
+                storeName = store.name,
+                location = LatLng(store.latitude, store.longitude),
+                isOrderPickedUp = false
+            )
+        }.toMutableList()
+
         initializeCompleteRoute()
         startTime = System.currentTimeMillis()
-        _pickupStatusFlow.tryEmit(storeList)
+        _pickupStatusFlow.tryEmit(storeList.toList())
     }
 
     private fun initializeCompleteRoute() {
-        try {
-            val segment1 = PolylineDecoder.decode("}zymA_oayM_CtF{AzD]hAiBfIcAfCeCbGqAtEW|Ae@Kq@UIGOSo@kBaD}I{@eBoBmFiBGeEEsBG]I_@Ke@A")
-            val decodedPoints = segment1
+        if (activeStoreLocations.isEmpty()) return
 
-            if (decodedPoints.isNotEmpty()) {
-                completeRoutePoints = decodedPoints
-                findStorePositionsOnRoute()
-            } else {
-                createFallbackCompleteRoute()
-            }
-        } catch (_: Exception) {
-            createFallbackCompleteRoute()
+        // Build a route through all stores to destination
+        val allLocations = mutableListOf<LatLng>()
+        activeStoreLocations.forEach { loc ->
+            allLocations.add(LatLng(loc.latitude!!, loc.longitude!!))
         }
+        allLocations.add(finalDestination)
+
+        val routePoints = mutableListOf<LatLng>()
+        for (i in 0 until allLocations.size - 1) {
+            val from = allLocations[i]
+            val to = allLocations[i + 1]
+            val distance = calculateDistance(from.latitude, from.longitude, to.latitude, to.longitude)
+            // More points for longer distances for smoother movement
+            val numPoints = (distance / 5.0).toInt().coerceIn(10, 100)
+            val segmentPoints = createSegmentPoints(from, to, numPoints)
+            if (i == 0) routePoints.addAll(segmentPoints) else routePoints.addAll(segmentPoints.drop(1))
+        }
+
+        completeRoutePoints = routePoints
+        findStorePositionsOnRoute()
     }
 
     private fun findStorePositionsOnRoute() {
         if (completeRoutePoints.isEmpty()) return
-
         storeRouteIndices.clear()
 
-        activeStoreLocations.forEachIndexed { _, storeLocation ->
+        activeStoreLocations.forEach { storeLocation ->
             val closestIndex = findClosestRoutePointIndex(storeLocation)
             storeRouteIndices.add(closestIndex)
         }
-
         destinationRouteIndex = completeRoutePoints.size - 1
         ensureCorrectStoreOrder()
     }
 
     private fun ensureCorrectStoreOrder() {
-        val sortedIndices = storeRouteIndices.sorted()
+        if (storeRouteIndices.isEmpty()) return
         val minDistance = completeRoutePoints.size / (numberOfStores + 2)
+        val sortedIndices = storeRouteIndices.sorted().toMutableList()
 
         for (i in sortedIndices.indices) {
             val adjustedIndex = when {
                 i == 0 -> maxOf(sortedIndices[i], minDistance)
                 else -> maxOf(sortedIndices[i], sortedIndices[i - 1] + minDistance)
             }
-            storeRouteIndices[i] = adjustedIndex.coerceAtMost(completeRoutePoints.size - minDistance - 1)
+            sortedIndices[i] = adjustedIndex.coerceAtMost(completeRoutePoints.size - minDistance - 1)
         }
+        storeRouteIndices = sortedIndices
     }
 
     private fun findClosestRoutePointIndex(storeLocation: SimpleLocation): Int {
         if (completeRoutePoints.isEmpty() || storeLocation.latitude == null || storeLocation.longitude == null) return 0
-
         var closestIndex = 0
         var minDistance = Double.MAX_VALUE
-
         completeRoutePoints.forEachIndexed { index, point ->
             val distance = calculateDistance(storeLocation.latitude, storeLocation.longitude, point.latitude, point.longitude)
             if (distance < minDistance) {
@@ -134,30 +167,6 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
             }
         }
         return closestIndex
-    }
-
-    private fun createFallbackCompleteRoute() {
-        val allLocations = mutableListOf<LatLng>()
-        activeStoreLocations.forEach { storeLocation ->
-            allLocations.add(LatLng(storeLocation.latitude!!, storeLocation.longitude!!))
-        }
-        allLocations.add(LatLng(finalDestinationLocation.latitude!!, finalDestinationLocation.longitude!!))
-
-        val routePoints = mutableListOf<LatLng>()
-        for (i in 0 until allLocations.size - 1) {
-            val from = allLocations[i]
-            val to = allLocations[i + 1]
-            val segmentPoints = createSegmentPoints(from, to, 20)
-            if (i == 0) routePoints.addAll(segmentPoints) else routePoints.addAll(segmentPoints.drop(1))
-        }
-        completeRoutePoints = routePoints
-
-        storeRouteIndices.clear()
-        val segmentSize = routePoints.size / (numberOfStores + 1)
-        for (i in 0 until numberOfStores) {
-            storeRouteIndices.add(i * segmentSize)
-        }
-        destinationRouteIndex = completeRoutePoints.size - 1
     }
 
     private fun createSegmentPoints(from: LatLng, to: LatLng, numPoints: Int): List<LatLng> =
@@ -180,24 +189,6 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
 
     private fun Double.toRadians(): Double = this * (PI / 180)
 
-    override fun init(globalOrderId: String, batchOrderId: String): Flow<OrderResponseData?> = flow {
-        val orderData = OrderResponseData(
-            batchOrderId = "MultiStopOrder123",
-            isOrderArrived = false,
-            stores = storeList,
-            multiStopDestination = LatLng(finalDestinationLocation.latitude!!, finalDestinationLocation.longitude!!)
-        )
-        emit(orderData)
-
-        delay(5.seconds) // Wait 5 seconds before pickup starts
-
-        storeList[0] = storeList[0].copy(isOrderPickedUp = true)
-        isOrderPickedUp = true
-        trackingId = "OrderTracking123"
-
-        _pickupStatusFlow.emit(storeList)
-    }
-
     override suspend fun getRoute(
         request: RouteRequest,
         batchOrderId: String,
@@ -206,7 +197,7 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
         if (completeRoutePoints.isNotEmpty()) {
             Result.success(completeRoutePoints)
         } else {
-            createFallbackCompleteRoute()
+            initializeCompleteRoute()
             Result.success(completeRoutePoints)
         }
     } catch (e: Exception) {
@@ -218,19 +209,20 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
             val mockLocation = if (trackingId != null && isOrderPickedUp) {
                 val currentTime = System.currentTimeMillis()
                 generateMultiStopRiderMovement(currentTime)
+            } else if (activeStoreLocations.isNotEmpty()) {
+                val first = activeStoreLocations.first()
+                SimpleLocation(first.latitude, first.longitude)
             } else {
-                SimpleLocation(sourceLocation.latitude, sourceLocation.longitude)
+                SimpleLocation(null, null)
             }
 
             emit(mockLocation)
             previousPoint = mockLocation
-            delay(1500) // 1.5s for smooth animation updates
+            delay(1500)
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun updateRoute(batchOrderId: String, route: List<LatLng>) {
-        // no-op for simulation
-    }
+    override fun updateRoute(batchOrderId: String, route: List<LatLng>) {}
 
     private fun generateMultiStopRiderMovement(currentTime: Long): SimpleLocation {
         val timeElapsed = currentTime - (startTime + 5000)
@@ -255,12 +247,12 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
 
     private fun followExactRoutePath(timeElapsed: Long): SimpleLocation {
         if (completeRoutePoints.isEmpty()) {
-            return SimpleLocation(sourceLocation.latitude, sourceLocation.longitude)
+            return SimpleLocation(null, null)
         }
 
         val baseJourneyMinutes = GoogleMapConstants.MULTI_STOP_JOURNEY_DURATION_MINUTES
         val additionalTimePerStore = 2
-        val totalJourneyMinutes = baseJourneyMinutes + maxOf(0, numberOfStores - 3) * additionalTimePerStore
+        val totalJourneyMinutes = baseJourneyMinutes + maxOf(0, numberOfStores - 1) * additionalTimePerStore
         val totalJourneyTimeMs = totalJourneyMinutes * 60 * 1000L
 
         val progress = (timeElapsed.toFloat() / totalJourneyTimeMs).coerceIn(0f, 1f)
@@ -280,7 +272,7 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
             completeRoutePoints[baseIndex]
         }
 
-        val gpsAccuracyMeters = 10.0
+        val gpsAccuracyMeters = 5.0
         val latNoiseDegrees = (Random.nextDouble() - 0.5) * (gpsAccuracyMeters / 111320.0)
         val lngNoiseDegrees = (Random.nextDouble() - 0.5) * (gpsAccuracyMeters / (111320.0 * cos(riderPosition.latitude * PI / 180.0)))
 
@@ -291,7 +283,7 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
     }
 
     private fun checkStoreArrivalByDistance(): StoreArrivalCheck {
-        val currentLocation = getCurrentRiderLocation()
+        val currentLocation = getCurrentRiderLocation() ?: return StoreArrivalCheck(false, -1)
         val pendingStores = storeList.filter { !it.isOrderPickedUp }
 
         for (storeLocation in pendingStores) {
@@ -308,15 +300,15 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
     }
 
     private fun startRepositoryControlledPickup(storeIndex: Int, currentTime: Long) {
-        if (!pickupInProgress && storeIndex < storeList.size) {
-            val store = activeStores[storeIndex]
+        if (!pickupInProgress && storeIndex < storeList.size && storeIndex < storeConfigs.size) {
+            val store = storeConfigs[storeIndex]
             pickupInProgress = true
             currentPickupStoreIndex = storeIndex
             pickupStartTime = currentTime
             riderStationaryLocation = LatLng(store.latitude, store.longitude)
 
             storeList[storeIndex] = storeList[storeIndex].copy(isOrderPickedUp = true)
-            _pickupStatusFlow.tryEmit(storeList)
+            _pickupStatusFlow.tryEmit(storeList.toList())
         }
     }
 
@@ -330,8 +322,6 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
     }
 
     private fun completeRepositoryControlledPickup(storeIndex: Int) {
-        val pendingStores = storeList.filter { !it.isOrderPickedUp }
-        currentStopIndex = (numberOfStores - pendingStores.size + 1).coerceAtMost(numberOfStores)
         pickupInProgress = false
         currentPickupStoreIndex = null
         pickupStartTime = null
@@ -339,13 +329,13 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
 
         if (storeIndex < storeList.size) {
             storeList[storeIndex] = storeList[storeIndex].copy(isOrderPickedUp = true)
-            _pickupStatusFlow.tryEmit(storeList)
+            _pickupStatusFlow.tryEmit(storeList.toList())
         }
     }
 
     private fun generateStationaryPickupLocation(): SimpleLocation {
         val baseLocation = riderStationaryLocation ?: return SimpleLocation(null, null)
-        val gpsAccuracyMeters = 5.0
+        val gpsAccuracyMeters = 3.0
         val latNoiseDegrees = (Random.nextDouble() - 0.5) * (gpsAccuracyMeters / 111320.0)
         val lngNoiseDegrees = (Random.nextDouble() - 0.5) * (gpsAccuracyMeters / (111320.0 * cos(baseLocation.latitude * PI / 180.0)))
         return SimpleLocation(
@@ -354,10 +344,8 @@ class GoogleMapRepositorySimulation : GoogleMapRepository {
         )
     }
 
-    private fun getCurrentRiderLocation(): LatLng {
-        if (completeRoutePoints.isEmpty()) {
-            return LatLng(sourceLocation.latitude!!, sourceLocation.longitude!!)
-        }
+    private fun getCurrentRiderLocation(): LatLng? {
+        if (completeRoutePoints.isEmpty()) return null
         return completeRoutePoints.getOrElse(currentRouteIndex) { completeRoutePoints.first() }
     }
 
