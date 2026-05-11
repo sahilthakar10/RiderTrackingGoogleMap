@@ -12,7 +12,6 @@ data class GoogleMapUiState(
 
     // Route visualization states
     val remainingRoutePoints: List<LatLng> = emptyList(),
-    val animateRemainingRoutePoints: List<LatLng> = emptyList(),
     val visitedRoutePoints: List<LatLng> = emptyList(),
 
     // Re-routing states

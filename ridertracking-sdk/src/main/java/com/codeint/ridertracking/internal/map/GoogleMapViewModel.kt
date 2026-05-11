@@ -49,21 +49,19 @@ internal class GoogleMapViewModel(
         scope.launch {
             riderManager.riderState.collect { riderState ->
                 _uiState.update { state ->
-                    val list = state.animateRemainingRoutePoints.toMutableList()
-                    list.remove(riderState.animatedLocation)
-                    val (activePath, inactivePath) = calculateActiveAndInactivePaths(
-                        state.copy(
-                            animatedRiderLocation = riderState.animatedLocation,
-                            animateRemainingRoutePoints = list
-                        )
-                    )
-                    state.copy(
+                    val newRemaining = riderState.remainingRoutePoints.ifEmpty { state.remainingRoutePoints }
+                    val newVisited = riderState.visitedRoutePoints
+
+                    val updatedState = state.copy(
                         animatedRiderLocation = riderState.animatedLocation,
+                        remainingRoutePoints = newRemaining,
+                        visitedRoutePoints = newVisited
+                    )
+                    val (activePath, inactivePath) = calculateActiveAndInactivePaths(updatedState)
+
+                    updatedState.copy(
                         riderHeading = riderState.heading,
                         isAnimating = riderState.isAnimating,
-                        visitedRoutePoints = riderState.visitedRoutePoints,
-                        remainingRoutePoints = riderState.remainingRoutePoints,
-                        animateRemainingRoutePoints = list,
                         currentSegmentProgress = riderState.currentSegmentProgress,
                         activePathSegment = activePath,
                         inactivePathSegments = inactivePath
@@ -121,7 +119,7 @@ internal class GoogleMapViewModel(
     private fun calculateActiveAndInactivePaths(
         currentState: GoogleMapUiState = _uiState.value
     ): Pair<List<LatLng>, List<LatLng>> {
-        val remainingPoints = currentState.animateRemainingRoutePoints
+        val remainingPoints = currentState.remainingRoutePoints
         val riderLocation = currentState.animatedRiderLocation
         val visibleStores = currentState.visibleStores
         val destination = currentState.multiStopDestination
@@ -341,7 +339,7 @@ internal class GoogleMapViewModel(
                     val tempSegment = RouteSegment("pre_pickup_$batchOrderId", densifiedRoute, isActive = true)
                     _uiState.update { it.copy(
                         activeSegment = tempSegment, remainingRoutePoints = densifiedRoute,
-                        animateRemainingRoutePoints = densifiedRoute, visitedRoutePoints = emptyList(), isRouteVisible = false
+                        visitedRoutePoints = emptyList(), isRouteVisible = false
                     )}
                     riderManager.initializeForRoute(activeSegment = tempSegment)
                     calculateInitialCameraBounds()
@@ -364,7 +362,7 @@ internal class GoogleMapViewModel(
                     val activeSegment = segment.copy(routePoints = densifiedRoutePoints)
                     _uiState.update { it.copy(
                         activeSegment = activeSegment, remainingRoutePoints = densifiedRoutePoints,
-                        animateRemainingRoutePoints = densifiedRoutePoints, visitedRoutePoints = emptyList(), isRouteVisible = true
+                        visitedRoutePoints = emptyList(), isRouteVisible = true
                     )}
                     riderManager.initializeForRoute(activeSegment = activeSegment)
                     calculateInitialCameraBounds()
@@ -379,7 +377,7 @@ internal class GoogleMapViewModel(
     private fun initializeRiderAtStore(storeLocation: LatLng) {
         val tempSegment = RouteSegment("direct_position_$batchOrderId", listOf(storeLocation), isActive = true)
         _uiState.update { it.copy(
-            remainingRoutePoints = listOf(storeLocation), animateRemainingRoutePoints = listOf(storeLocation),
+            remainingRoutePoints = listOf(storeLocation),
             visitedRoutePoints = emptyList(), isRouteVisible = false
         )}
         riderManager.initializeForRoute(activeSegment = tempSegment)
@@ -549,7 +547,7 @@ internal class GoogleMapViewModel(
 
             riderManager.processRiderLocationUpdate(
                 response = response, activeSegment = currentState.activeSegment,
-                remainingRoutePoints = currentState.animateRemainingRoutePoints,
+                remainingRoutePoints = currentState.remainingRoutePoints,
                 childOrderId = batchOrderId, visibleStores = currentState.visibleStores,
                 destination = currentState.multiStopDestination
             )
@@ -565,7 +563,7 @@ internal class GoogleMapViewModel(
                         val densified = densifyRoutePoints(segment.routePoints)
                         _uiState.update { it.copy(
                             activeSegment = segment.copy(routePoints = densified),
-                            remainingRoutePoints = densified, animateRemainingRoutePoints = densified,
+                            remainingRoutePoints = densified,
                             visitedRoutePoints = emptyList(), isRerouting = false
                         )}
                         riderManager.handleReroute(segment)
@@ -601,7 +599,7 @@ internal class GoogleMapViewModel(
 
     private fun clearRouteVisualizationForCompletion() {
         _uiState.update { it.copy(
-            remainingRoutePoints = emptyList(), animateRemainingRoutePoints = emptyList(),
+            remainingRoutePoints = emptyList(),
             visitedRoutePoints = emptyList(), activeSegment = null, isRouteVisible = false
         )}
     }

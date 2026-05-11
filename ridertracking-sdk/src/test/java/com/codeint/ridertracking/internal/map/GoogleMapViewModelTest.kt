@@ -152,7 +152,6 @@ class GoogleMapViewModelTest {
         val sparse = listOf(LatLng(12.0, 77.0), LatLng(12.02, 77.0))
         viewModel.updateState { it.copy(
             remainingRoutePoints = sparse,
-            animateRemainingRoutePoints = sparse
         )}
         // At minimum, the points are stored
         assertEquals(2, viewModel.uiState.value.remainingRoutePoints.size)
@@ -177,7 +176,6 @@ class GoogleMapViewModelTest {
     fun `completion state - clears route visualization`() {
         viewModel.updateState { it.copy(
             remainingRoutePoints = listOf(LatLng(12.0, 77.0)),
-            animateRemainingRoutePoints = listOf(LatLng(12.0, 77.0)),
             visitedRoutePoints = listOf(LatLng(12.0, 77.0)),
             isCompletionAnimation = true,
             isRouteVisible = false
