@@ -1,10 +1,10 @@
 package com.codeint.ridertracking.internal.map
 
 class RouteCache {
-    private val cacheMap: MutableMap<String, RiderLastData> = HashMap()
-    private val pruningStateMap: MutableMap<String, Boolean> = HashMap()
-    private val multiStopDataMap: MutableMap<String, MultiStopCacheData> = HashMap()
-    private val segmentCacheMap: MutableMap<String, MutableMap<String, RouteSegment>> = HashMap()
+    private val cacheMap: MutableMap<String, RiderLastData> = java.util.concurrent.ConcurrentHashMap()
+    private val pruningStateMap: MutableMap<String, Boolean> = java.util.concurrent.ConcurrentHashMap()
+    private val multiStopDataMap: MutableMap<String, MultiStopCacheData> = java.util.concurrent.ConcurrentHashMap()
+    private val segmentCacheMap: MutableMap<String, MutableMap<String, RouteSegment>> = java.util.concurrent.ConcurrentHashMap()
 
     fun getRoute(batchOrderId: String): List<LatLng>? = cacheMap[batchOrderId]?.route
 

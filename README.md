@@ -114,6 +114,26 @@ fun DeliveryScreen() {
 }
 ```
 
+## Live Rider Tracking
+
+Push real-time rider locations from your backend:
+
+```kotlin
+val riderLocations = MutableSharedFlow<TrackingLocation>()
+
+RiderTrackingMap(
+    order = myOrder,
+    riderLocationUpdates = riderLocations
+)
+
+// Push updates whenever you receive new rider coordinates
+scope.launch {
+    riderLocations.emit(TrackingLocation(12.918, 77.671))
+}
+```
+
+When `riderLocationUpdates` is provided, it overrides the internal simulation. Order data, routes, and pickup status still work internally.
+
 ## Configuration
 
 | Parameter | Type | Default | Description |

@@ -58,15 +58,3 @@ sealed class TrackingEvent {
     object MapLoaded : TrackingEvent()
 }
 
-/**
- * Interface for providing real-time tracking data.
- * Implement this to supply live rider location and order updates.
- * Not needed when using simulation mode.
- */
-interface TrackingDataProvider {
-    /** Provide the latest rider location. Return null if unavailable. */
-    suspend fun getRiderLocation(orderId: String): TrackingLocation?
-
-    /** Provide the latest order state (stores pickup status, arrival, etc.) */
-    suspend fun getOrderUpdate(orderId: String): TrackingOrder?
-}

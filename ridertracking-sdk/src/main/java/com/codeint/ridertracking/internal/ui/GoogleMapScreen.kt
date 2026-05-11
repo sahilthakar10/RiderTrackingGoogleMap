@@ -33,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -164,11 +163,6 @@ private fun GoogleMapContainer(
             MapContentContainer(uiState = uiState)
         }
 
-        GestureHandlingOverlay(
-            cameraPositionState = cameraPositionState,
-            modifier = Modifier.fillMaxSize()
-        )
-
         if (uiState.isRerouting) {
             ReroutingOverlay(modifier = Modifier.fillMaxSize())
         }
@@ -176,7 +170,7 @@ private fun GoogleMapContainer(
 }
 
 @Composable
-fun MapContentContainer(uiState: GoogleMapUiState) {
+internal fun MapContentContainer(uiState: GoogleMapUiState) {
     MultiStopMapContent(uiState = uiState)
     RiderMarkerContainer(
         animatedRiderLocation = uiState.animatedRiderLocation?.toGmsLatLng(),
@@ -185,7 +179,7 @@ fun MapContentContainer(uiState: GoogleMapUiState) {
 }
 
 @Composable
-fun createStoreMarkerWithLabel(
+internal fun createStoreMarkerWithLabel(
     storeName: String,
     isOrderPickedUp: Boolean,
     context: Context = LocalContext.current
@@ -206,7 +200,7 @@ fun createStoreMarkerWithLabel(
     return BitmapDescriptorFactory.fromBitmap(customMarkerBitmap)
 }
 
-fun createCustomStoreMarker(
+internal fun createCustomStoreMarker(
     context: Context,
     storeName: String,
     isOrderPickedUp: Boolean,
@@ -289,7 +283,7 @@ fun createCustomStoreMarker(
     return bitmap
 }
 
-fun drawCheckmark(canvas: Canvas, x: Float, y: Float, size: Float, positiveColor: Int, inverseColor: Int) {
+internal fun drawCheckmark(canvas: Canvas, x: Float, y: Float, size: Float, positiveColor: Int, inverseColor: Int) {
     val circlePaint = Paint().apply {
         color = positiveColor
         style = Paint.Style.FILL
@@ -319,7 +313,7 @@ fun drawCheckmark(canvas: Canvas, x: Float, y: Float, size: Float, positiveColor
 }
 
 @Composable
-fun RiderMarkerContainer(
+internal fun RiderMarkerContainer(
     animatedRiderLocation: LatLng?,
     riderHeading: Double
 ) {
@@ -327,7 +321,7 @@ fun RiderMarkerContainer(
 }
 
 @Composable
-fun RiderMarker(
+internal fun RiderMarker(
     animatedRiderLocation: LatLng?,
     riderHeading: Double
 ) {
@@ -349,72 +343,7 @@ fun RiderMarker(
 }
 
 @Composable
-fun GestureHandlingOverlay(
-    cameraPositionState: CameraPositionState,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier.pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    awaitPointerEvent().also { event ->
-                        when (event.changes.size) {
-                            1 -> {
-                                val change = event.changes.first()
-                                if (change.pressed) {
-                                    val deltaX = change.position.x - change.previousPosition.x
-                                    val deltaY = change.position.y - change.previousPosition.y
-                                    val currentZoom = cameraPositionState.position.zoom
-
-                                    val latLngPerPixel = when {
-                                        currentZoom >= 18f -> 0.000005f
-                                        currentZoom >= 15f -> 0.00001f
-                                        currentZoom >= 12f -> 0.00002f
-                                        currentZoom >= 8f -> 0.00005f
-                                        currentZoom >= 5f -> 0.0001f
-                                        else -> 0.0002f
-                                    }
-
-                                    val deltaLat = (deltaY * latLngPerPixel).toDouble()
-                                    val deltaLng = (-deltaX * latLngPerPixel).toDouble()
-                                    val currentTarget = cameraPositionState.position.target
-                                    val newTarget = LatLng(
-                                        (currentTarget.latitude + deltaLat).coerceIn(-85.0, 85.0),
-                                        currentTarget.longitude + deltaLng
-                                    )
-
-                                    cameraPositionState.move(CameraUpdateFactory.newLatLng(newTarget))
-                                    change.consume()
-                                }
-                            }
-                            2 -> {
-                                val change1 = event.changes[0]
-                                val change2 = event.changes[1]
-                                if (change1.pressed && change2.pressed) {
-                                    val currentDistance = (change1.position - change2.position).getDistance()
-                                    val previousDistance = (change1.previousPosition - change2.previousPosition).getDistance()
-                                    if (previousDistance > 0) {
-                                        val rawZoomFactor = currentDistance / previousDistance
-                                        val zoomSensitivity = 0.3f
-                                        val adjustedZoomFactor = 1f + (rawZoomFactor - 1f) * zoomSensitivity
-                                        val currentZoom = cameraPositionState.position.zoom
-                                        val newZoom = (currentZoom * adjustedZoomFactor).coerceIn(1f, 21f)
-                                        cameraPositionState.move(CameraUpdateFactory.zoomTo(newZoom))
-                                    }
-                                    change1.consume()
-                                    change2.consume()
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    )
-}
-
-@Composable
-fun MultiStopMapContent(uiState: GoogleMapUiState) {
+internal fun MultiStopMapContent(uiState: GoogleMapUiState) {
     key(uiState.stores.map { it.isOrderPickedUp }) {
         MultiStopStoreMarkers(stores = uiState.stores)
     }
@@ -436,7 +365,7 @@ fun MultiStopMapContent(uiState: GoogleMapUiState) {
 }
 
 @Composable
-fun MultiStopStoreMarkers(stores: List<StoreLocation>) {
+internal fun MultiStopStoreMarkers(stores: List<StoreLocation>) {
     val context = LocalContext.current
 
     val storeIcons = stores.associateWith { store ->
@@ -462,7 +391,7 @@ fun MultiStopStoreMarkers(stores: List<StoreLocation>) {
 }
 
 @Composable
-fun MultiStopDestinationMarker(destination: LatLng?) {
+internal fun MultiStopDestinationMarker(destination: LatLng?) {
     val context = LocalContext.current
     destination?.let { dest ->
         val destinationIcon = remember {
@@ -482,7 +411,7 @@ fun MultiStopDestinationMarker(destination: LatLng?) {
 }
 
 @Composable
-fun MultiStopRouteSegments(
+internal fun MultiStopRouteSegments(
     activeSegment: RouteSegment?,
     isRerouting: Boolean,
     visitedRoutePoints: List<LatLng>,
@@ -585,7 +514,7 @@ private fun ReroutingOverlay(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun DestinationArrivalCircle(destination: LatLng?) {
+internal fun DestinationArrivalCircle(destination: LatLng?) {
     destination?.let { dest ->
         Circle(
             center = dest,
