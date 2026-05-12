@@ -8,7 +8,10 @@ class SampleApp : Application() {
     override fun onCreate() {
         super.onCreate()
         RiderTrackingSDK.initialize(
-            config = RiderTrackingConfig(useSimulation = true)
+            config = RiderTrackingConfig(
+                useSimulation = true,
+                routesApiKey = "AIzaSyDRbiA6ireJSkoZrKJ145TunRmu256tHFc"
+            )
         )
     }
 }

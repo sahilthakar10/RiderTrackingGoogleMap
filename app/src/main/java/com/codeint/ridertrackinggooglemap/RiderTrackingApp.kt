@@ -10,7 +10,10 @@ class RiderTrackingApp : Application() {
         super.onCreate()
 
         RiderTrackingSDK.initialize(
-            config = RiderTrackingConfig(useSimulation = true)
+            config = RiderTrackingConfig(
+                useSimulation = true,
+                routesApiKey = BuildConfig.ROUTES_API_KEY
+            )
         )
     }
 }
