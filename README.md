@@ -8,6 +8,12 @@ Real-time rider tracking SDK for Android with Google Maps. Supports multi-stop d
 ![Platform](https://img.shields.io/badge/Platform-Android-blue)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Ready-purple)
 
+## Demo
+
+https://github.com/user-attachments/assets/ridertracking_demo.mp4
+
+https://github.com/sahilthakar10/RiderTrackingGoogleMap/raw/main/ridertracking_demo.mp4
+
 ## Features
 
 - **Real-time rider tracking** on Google Maps with smooth animation
