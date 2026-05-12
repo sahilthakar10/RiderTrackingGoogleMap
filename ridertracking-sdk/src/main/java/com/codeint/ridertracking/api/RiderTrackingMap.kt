@@ -16,48 +16,37 @@ import kotlinx.coroutines.flow.map
 /**
  * Main composable for displaying a rider tracking map.
  *
- * **Simulation mode** (default):
  * ```kotlin
- * RiderTrackingMap(
- *     order = TrackingOrder(
- *         orderId = "order123",
- *         stores = listOf(TrackingStore("s1", "Pizza Palace", TrackingLocation(12.91, 77.67))),
- *         destination = TrackingLocation(12.92, 77.66)
- *     )
- * )
- * ```
- *
- * **Live rider tracking** (push location updates manually):
- * ```kotlin
- * val riderLocations = MutableSharedFlow<TrackingLocation>()
- *
  * RiderTrackingMap(
  *     order = myOrder,
+ *     appearance = RiderTrackingAppearance(
+ *         activeRouteColor = Color.Green,
+ *         riderIcon = R.drawable.my_rider,
+ *         mapStyleJson = myStyleJson
+ *     ),
  *     riderLocationUpdates = riderLocations,
  *     onEvent = { event -> /* handle */ }
  * )
- *
- * // Push updates whenever you get new rider coordinates
- * riderLocations.emit(TrackingLocation(12.91, 77.67))
  * ```
  *
  * @param order The order to track on the map.
  * @param modifier Modifier for the map container.
+ * @param appearance Customize map colors, icons, labels, and style.
  * @param riderLocationUpdates Optional flow of real-time rider locations.
- *        When provided, overrides the internal simulation/polling.
- *        Emit new [TrackingLocation] values as the rider moves.
- * @param onEvent Callback for tracking events (arrivals, pickups, etc.).
+ * @param onEvent Callback for tracking events.
  */
 @Composable
 fun RiderTrackingMap(
     order: TrackingOrder,
     modifier: Modifier = Modifier,
+    appearance: RiderTrackingAppearance = RiderTrackingAppearance(),
     riderLocationUpdates: Flow<TrackingLocation>? = null,
     onEvent: ((TrackingEvent) -> Unit)? = null
 ) {
     if (!RiderTrackingSDK.isInitialized) return
 
     val currentOnEvent = rememberUpdatedState(onEvent)
+    val currentAppearance = rememberUpdatedState(appearance)
 
     val internalLocationFlow = remember(riderLocationUpdates) {
         riderLocationUpdates?.map { location ->
@@ -95,6 +84,7 @@ fun RiderTrackingMap(
 
     InternalGoogleMapScreen(
         viewModel = viewModel,
+        appearance = currentAppearance.value,
         modifier = modifier.fillMaxSize()
     )
 }
