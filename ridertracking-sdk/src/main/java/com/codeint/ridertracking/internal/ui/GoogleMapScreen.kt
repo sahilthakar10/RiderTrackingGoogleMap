@@ -137,25 +137,28 @@ private fun GoogleMapContainer(
         }
     }
 
+    val mapStyleOptions = remember { MapStyleOptions(GoogleMapConstants.MAP_UI_JSON) }
+    val mapProperties = remember { MapProperties(isTrafficEnabled = false, mapStyleOptions = mapStyleOptions) }
+    val mapUiSettings = remember {
+        MapUiSettings(
+            zoomControlsEnabled = false,
+            compassEnabled = true,
+            myLocationButtonEnabled = false,
+            rotationGesturesEnabled = true,
+            scrollGesturesEnabled = true,
+            tiltGesturesEnabled = true,
+            zoomGesturesEnabled = true,
+            mapToolbarEnabled = false,
+            indoorLevelPickerEnabled = false
+        )
+    }
+
     Box(modifier = modifier) {
         GoogleMap(
             modifier = Modifier.fillMaxSize(),
             cameraPositionState = cameraPositionState,
-            properties = MapProperties(
-                isTrafficEnabled = false,
-                mapStyleOptions = MapStyleOptions(GoogleMapConstants.MAP_UI_JSON)
-            ),
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                compassEnabled = true,
-                myLocationButtonEnabled = false,
-                rotationGesturesEnabled = true,
-                scrollGesturesEnabled = true,
-                tiltGesturesEnabled = true,
-                zoomGesturesEnabled = true,
-                mapToolbarEnabled = false,
-                indoorLevelPickerEnabled = false
-            ),
+            properties = mapProperties,
+            uiSettings = mapUiSettings,
             onMapClick = {
                 viewModel.toggleFollowRider()
             }
