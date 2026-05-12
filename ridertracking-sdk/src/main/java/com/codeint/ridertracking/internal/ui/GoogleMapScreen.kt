@@ -39,6 +39,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import com.codeint.ridertracking.R
 import com.codeint.ridertracking.api.RiderTrackingAppearance
+import com.codeint.ridertracking.api.TrackingLocation
+import com.codeint.ridertracking.api.TrackingPhase
+import com.codeint.ridertracking.api.TrackingStore
+import com.codeint.ridertracking.api.TrackingUiState
 import com.codeint.ridertracking.internal.map.GoogleMapConstants
 import com.codeint.ridertracking.internal.map.GoogleMapUiState
 import com.codeint.ridertracking.internal.map.GoogleMapViewModel
@@ -69,6 +73,24 @@ internal fun com.codeint.ridertracking.internal.map.LatLng.toGmsLatLng(): LatLng
 internal fun List<com.codeint.ridertracking.internal.map.LatLng>.toGmsLatLngList(): List<LatLng> =
     this.map { it.toGmsLatLng() }
 
+/** Convert internal UI state to public TrackingUiState for consumer overlays */
+internal fun GoogleMapUiState.toTrackingUiState(): TrackingUiState {
+    return TrackingUiState(
+        riderLocation = animatedRiderLocation?.let { TrackingLocation(it.latitude, it.longitude) },
+        riderHeading = riderHeading,
+        isRiderMoving = isAnimating,
+        stores = stores.map { TrackingStore(id = it.storeName, name = it.storeName, location = TrackingLocation(it.location.latitude, it.location.longitude), isPickedUp = it.isOrderPickedUp) },
+        pendingStores = visibleStores.map { TrackingStore(id = it.storeName, name = it.storeName, location = TrackingLocation(it.location.latitude, it.location.longitude)) },
+        pendingStoreCount = visibleStores.size,
+        destination = multiStopDestination?.let { TrackingLocation(it.latitude, it.longitude) },
+        isOrderArrived = isOrderArrived,
+        isRerouting = isRerouting,
+        isMapReady = shouldShowMap,
+        isRouteVisible = isRouteVisible,
+        phase = if (routingPhase == com.codeint.ridertracking.internal.map.RoutingPhase.POST_PICKUP) TrackingPhase.POST_PICKUP else TrackingPhase.PRE_PICKUP
+    )
+}
+
 @Composable
 internal fun InternalGoogleMapScreen(
     viewModel: GoogleMapViewModel,
@@ -83,11 +105,17 @@ internal fun InternalGoogleMapScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         if (!uiState.shouldShowMap) {
-            if (appearance.showLoadingIndicator) {
+            // Custom or default loading
+            if (appearance.loadingContent != null) {
+                appearance.loadingContent.invoke()
+            } else {
                 LoadingIndicator(message = appearance.loadingMessage, modifier = Modifier.align(Alignment.Center))
             }
         } else {
             GoogleMapContainer(viewModel = viewModel, uiState = uiState, appearance = appearance, modifier = Modifier.fillMaxSize())
+
+            // Custom map overlay (ETA cards, info panels, etc.)
+            appearance.mapOverlayContent?.invoke(uiState.toTrackingUiState())
         }
     }
 }
@@ -122,9 +150,9 @@ private fun GoogleMapContainer(
     val styleJson = appearance.mapStyleJson ?: GoogleMapConstants.MAP_UI_JSON
     val mapStyleOptions = remember(styleJson) { MapStyleOptions(styleJson) }
     val mapProperties = remember(mapStyleOptions) { MapProperties(isTrafficEnabled = false, mapStyleOptions = mapStyleOptions) }
-    val mapUiSettings = remember {
+    val mapUiSettings = remember(appearance.showCompass) {
         MapUiSettings(
-            zoomControlsEnabled = false, compassEnabled = true, myLocationButtonEnabled = false,
+            zoomControlsEnabled = false, compassEnabled = appearance.showCompass, myLocationButtonEnabled = false,
             rotationGesturesEnabled = true, scrollGesturesEnabled = true, tiltGesturesEnabled = true,
             zoomGesturesEnabled = true, mapToolbarEnabled = false, indoorLevelPickerEnabled = false
         )
@@ -142,7 +170,11 @@ private fun GoogleMapContainer(
         }
 
         if (uiState.isRerouting) {
-            ReroutingOverlay(modifier = Modifier.fillMaxSize())
+            if (appearance.reroutingContent != null) {
+                appearance.reroutingContent.invoke()
+            } else {
+                ReroutingOverlay(modifier = Modifier.fillMaxSize())
+            }
         }
     }
 }
@@ -186,7 +218,7 @@ internal fun MultiStopMapContent(uiState: GoogleMapUiState, appearance: RiderTra
 
     MultiStopDestinationMarker(destination = uiState.multiStopDestination?.toGmsLatLng(), appearance = appearance)
 
-    if (uiState.isOrderArrived) {
+    if (uiState.isOrderArrived && appearance.showArrivalCircle) {
         DestinationArrivalCircle(destination = uiState.multiStopDestination?.toGmsLatLng(), appearance = appearance)
     }
 
@@ -235,8 +267,9 @@ internal fun createStoreMarkerBitmap(
     appearance: RiderTrackingAppearance
 ): BitmapDescriptor {
     val storeDrawableRes = appearance.storeIcon ?: R.drawable.ic_store_marker
-    val storeIconBitmap = ContextCompat.getDrawable(context, storeDrawableRes)?.toBitmap(48, 48)
-        ?: Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+    val size = appearance.storeIconSize
+    val storeIconBitmap = ContextCompat.getDrawable(context, storeDrawableRes)?.toBitmap(size, size)
+        ?: Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
 
     val showLabel = appearance.showStoreLabels
     if (!showLabel) {
@@ -326,10 +359,11 @@ internal fun drawCheckmark(canvas: Canvas, x: Float, y: Float, size: Float, posi
 internal fun MultiStopDestinationMarker(destination: LatLng?, appearance: RiderTrackingAppearance) {
     val context = LocalContext.current
     destination?.let { dest ->
-        val icon = remember(appearance.destinationIcon) {
+        val icon = remember(appearance.destinationIcon, appearance.destinationIconWidth, appearance.destinationIconHeight) {
             val drawableRes = appearance.destinationIcon ?: R.drawable.ic_destination_marker
-            val bitmap = ContextCompat.getDrawable(context, drawableRes)?.toBitmap(48, 60)
-                ?: Bitmap.createBitmap(48, 60, Bitmap.Config.ARGB_8888)
+            val w = appearance.destinationIconWidth; val h = appearance.destinationIconHeight
+            val bitmap = ContextCompat.getDrawable(context, drawableRes)?.toBitmap(w, h)
+                ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             BitmapDescriptorFactory.fromBitmap(bitmap)
         }
         Marker(state = MarkerState(position = dest), icon = icon, alpha = 1.0f, title = "Destination")
@@ -347,7 +381,7 @@ internal fun MultiStopRouteSegments(
 
     if (visitedRoutePoints.isNotEmpty() || activePathSegment.isNotEmpty() || inactivePathSegments.isNotEmpty()) {
         if (visitedRoutePoints.size > 1) {
-            Polyline(points = visitedRoutePoints, color = Color.Gray.copy(alpha = 0f), width = routeWidth * 0.6f,
+            Polyline(points = visitedRoutePoints, color = appearance.visitedRouteColor, width = routeWidth * 0.6f,
                 pattern = listOf(Dash(10f), Gap(5f)))
         }
         if (inactivePathSegments.size > 1 && isRouteVisible) {
@@ -355,13 +389,13 @@ internal fun MultiStopRouteSegments(
         }
         if (activePathSegment.size > 1 && isRouteVisible) {
             Polyline(points = activePathSegment, color = appearance.activeRouteColor, width = routeWidth,
-                pattern = if (isRerouting) listOf(Dash(15f), Gap(8f)) else null)
+                pattern = if (isRerouting && appearance.reroutingDashPattern != null) listOf(Dash(appearance.reroutingDashPattern[0]), Gap(appearance.reroutingDashPattern[1])) else null)
         }
     } else {
         activeSegment?.let { segment ->
             Polyline(points = segment.routePoints.map { LatLng(it.latitude, it.longitude) },
                 color = appearance.activeRouteColor, width = routeWidth,
-                pattern = if (isRerouting) listOf(Dash(15f), Gap(8f)) else null)
+                pattern = if (isRerouting && appearance.reroutingDashPattern != null) listOf(Dash(appearance.reroutingDashPattern[0]), Gap(appearance.reroutingDashPattern[1])) else null)
         }
     }
 }
@@ -397,6 +431,6 @@ internal fun DestinationArrivalCircle(destination: LatLng?, appearance: RiderTra
     destination?.let { dest ->
         val radius = appearance.arrivalCircleRadiusMeters
         Circle(center = dest, radius = radius, fillColor = appearance.arrivalCircleFill, strokeColor = Color.Transparent, strokeWidth = 0f)
-        Circle(center = dest, radius = radius, fillColor = Color.Transparent, strokeColor = appearance.arrivalCircleStroke, strokeWidth = 3f, strokePattern = listOf(Dash(14f), Gap(12f)))
+        Circle(center = dest, radius = radius, fillColor = Color.Transparent, strokeColor = appearance.arrivalCircleStroke, strokeWidth = appearance.arrivalCircleStrokeWidth, strokePattern = listOf(Dash(14f), Gap(12f)))
     }
 }
