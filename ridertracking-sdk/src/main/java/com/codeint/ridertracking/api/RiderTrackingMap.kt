@@ -1,6 +1,5 @@
 package com.codeint.ridertracking.api
 
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -85,6 +84,6 @@ fun RiderTrackingMap(
     InternalGoogleMapScreen(
         viewModel = viewModel,
         appearance = currentAppearance.value,
-        modifier = modifier.fillMaxSize()
+        modifier = modifier
     )
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -103,7 +104,7 @@ internal fun InternalGoogleMapScreen(
         viewModel.loadRoute()
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.defaultMinSize(minHeight = 200.dp)) {
         if (!uiState.shouldShowMap) {
             // Custom or default loading
             if (appearance.loadingContent != null) {
@@ -112,7 +113,7 @@ internal fun InternalGoogleMapScreen(
                 LoadingIndicator(message = appearance.loadingMessage, modifier = Modifier.align(Alignment.Center))
             }
         } else {
-            GoogleMapContainer(viewModel = viewModel, uiState = uiState, appearance = appearance, modifier = Modifier.fillMaxSize())
+            GoogleMapContainer(viewModel = viewModel, uiState = uiState, appearance = appearance, modifier = Modifier.fillMaxSize()) // fills the parent Box
 
             // Custom map overlay (ETA cards, info panels, etc.)
             appearance.mapOverlayContent?.invoke(uiState.toTrackingUiState())
