@@ -67,18 +67,6 @@ fun SampleScreen(modifier: Modifier = Modifier) {
                 ),
                 destination = TrackingLocation(12.925499916077, 77.66960144043)
             )
-        ),
-        SampleScenario(
-            name = "Multi Stop",
-            order = TrackingOrder(
-                orderId = "multi_stop_001",
-                stores = listOf(
-                    TrackingStore("s1", "Pizza Palace", TrackingLocation(12.9170491, 77.6729254)),
-                    TrackingStore("s2", "Burger Barn", TrackingLocation(12.926773, 77.669541)),
-                    TrackingStore("s3", "Dessert Depot", TrackingLocation(12.927385, 77.670705))
-                ),
-                destination = TrackingLocation(12.925499916077, 77.66960144043)
-            )
         )
     )
 
