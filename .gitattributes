@@ -1,0 +1,20 @@
+# Auto-detect text files and normalize line endings
+* text=auto
+
+# Kotlin
+*.kt text diff=kotlin
+*.kts text diff=kotlin
+
+# XML
+*.xml text
+
+# Gradle
+*.gradle text
+*.gradle.kts text
+
+# Binary
+*.jar binary
+*.aar binary
+*.png binary
+*.webp binary
+*.mp4 binary

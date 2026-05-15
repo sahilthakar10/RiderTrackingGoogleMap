@@ -1,12 +1,19 @@
 *.iml
 .gradle
-/local.properties
 /.idea/
 .DS_Store
 **/build/
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
+# Binaries
 *.apk
 *.aab
+*.keystore
+*.jks
+
+# Secrets
+local.properties
+secrets.properties
+google-services.json

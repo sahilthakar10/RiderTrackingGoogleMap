@@ -10,7 +10,7 @@ class SampleApp : Application() {
         RiderTrackingSDK.initialize(
             config = RiderTrackingConfig(
                 useSimulation = true,
-                routesApiKey = "AIzaSyDRbiA6ireJSkoZrKJ145TunRmu256tHFc"
+                routesApiKey = "" // Add your Google Routes API key here
             )
         )
     }

@@ -7,8 +7,11 @@ package com.codeint.ridertracking.api
  *                      When false, provide live locations via [RiderTrackingMap]'s riderLocationUpdates parameter.
  * @param routesApiKey Google Routes API key for road-following route visualization.
  *                     Without this, routes will be straight lines between points.
+ * @param logLevel SDK log verbosity. Default [RiderTrackingLogLevel.NONE] (silent).
+ *                 Use [RiderTrackingLogLevel.DEBUG] during development for detailed logs.
  */
 data class RiderTrackingConfig(
     val useSimulation: Boolean = true,
-    val routesApiKey: String? = null
+    val routesApiKey: String? = null,
+    val logLevel: RiderTrackingLogLevel = RiderTrackingLogLevel.NONE
 )
